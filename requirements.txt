@@ -1,3 +1,4 @@
 pyTelegramBotAPI
 configparser
 PyMongo
+pyspellchecker
