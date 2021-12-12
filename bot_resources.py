@@ -2,6 +2,9 @@ import telebot as tb
 import configparser
 import pymongo as pm
 import logging
+from geopy.geocoders import Nominatim
+
+geolocator = Nominatim(user_agent="SmatchBot")
 
 logging.basicConfig(filename="sample.log", level=logging.INFO)
 
@@ -13,3 +16,7 @@ config.read("resources/settings.ini")
 bot = tb.TeleBot(config["Telegram"]['token'], parse_mode='MARKDOWN')
 client = pm.MongoClient(config["MongoDB"]['server'], int(config["MongoDB"]['port']))
 db = client[config['MongoDB']['db']]
+
+ReplyKeyboardRemove = tb.types.ReplyKeyboardRemove(selective=False)
+
+print('Bot loaded')

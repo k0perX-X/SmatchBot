@@ -1,7 +1,8 @@
-from bot_resoses import *
+from bot_resources import *
 from spellchecker import SpellChecker
 import datetime
 from typing import Any, Callable, List, Optional, Union
+import commands.main_menu as main_menu
 
 months_checker = SpellChecker(local_dictionary="resources/empty.json", distance=4)
 months_checker.word_frequency.load_text_file("resources/months.ini")
@@ -20,11 +21,14 @@ about_user_decs_list = {}
 # todo если не закончил регистрацию запрос через время на продолжение
 
 
-@bot.message_handler(commands=['start'])
-def start_command(message):
+@bot.message_handler(func= lambda message: message.text[0:6] == '/start')
+def start_command(message: tb.types.Message):
     """Функция команды start"""
-    if len([r for r in db['users'].find({"_id": message.from_user.id})]) == 1:
+    user = db['users'].find_one({"_id": message.from_user.id})
+    if user is not None:
         # если у человек зарегистрирован в боте спрашиваем разрешение на сброс
+        bot.send_message(message.from_user.id, language['Start']['restart_alert'],
+                         reply_markup=ReplyKeyboardRemove)
         bot.send_message(message.from_user.id, language['Start']['restart'],
                          reply_markup=consent_to_reset_keyboard)
     else:
@@ -32,15 +36,15 @@ def start_command(message):
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "consent_to_reset_keyboard//no")
-def reset_canceled(call):
-    """если запретил сброс"""
+def reset_canceled(call: tb.types.CallbackQuery):
+    """Если запретил сброс"""
     bot.edit_message_reply_markup(call.message.chat.id, call.message.id)
-    start_cycle(call.from_user.id)
+    main_menu.main_menu_cycle(call.from_user.id)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "consent_to_reset_keyboard//yes")
-def reset_applied(call):
-    """если разрешил сброс"""
+def reset_applied(call: tb.types.CallbackQuery):
+    """Если разрешил сброс"""
     bot.edit_message_reply_markup(call.message.chat.id, call.message.id)
     db['users'].delete_one({'_id': call.from_user.id})
     start_cycle(call.from_user.id)
@@ -48,28 +52,34 @@ def reset_applied(call):
 
 def start_cycle(from_user_id):
     """Запуск цикла функции start"""
-    bot.send_message(from_user_id, language['Start']['message'])
-    bot.send_message(from_user_id, language['Start']['policy'], reply_markup=consent_to_policy)
+    bot.send_message(from_user_id, language['Start']['message'], reply_markup=ReplyKeyboardRemove)
+    bot.send_message(from_user_id, language['Start']['policy'], reply_markup=consent_to_policy,
+                     disable_web_page_preview=True)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "consent_to_policy//yes")
-def policy_applied(call):
-    """если согласен с политикой"""
+def policy_applied(call: tb.types.CallbackQuery):
+    """Если согласен с политикой"""
     bot.edit_message_reply_markup(call.message.chat.id, call.message.id)
-    bot.send_message(call.from_user.id, language['Start']['get_name'])
-    bot.register_next_step_handler_by_chat_id(call.from_user.id, get_name)
+    start_start(call.from_user.id)
+
+
+def start_start(user_id: int):
+    """Запуск настройки регистрации"""
+    bot.send_message(user_id, language['Start']['get_name'], reply_markup=ReplyKeyboardRemove)
+    bot.register_next_step_handler_by_chat_id(user_id, get_name)
     try:
         db['registration'].insert_one({
-            "_id": call.from_user.id,
+            "_id": user_id,
             "time_of_start_registration": datetime.datetime.now()
         })
     except pm.errors.DuplicateKeyError:
-        db['registration'].update_one({'_id': call.from_user.id}, {'$set': {
+        db['registration'].update_one({'_id': user_id}, {'$set': {
             "time_of_start_registration": datetime.datetime.now()
         }})
 
 
-def get_name(message):
+def get_name(message: tb.types.Message):
     """Уточнение правильности имени"""
     bot.send_message(message.from_user.id, language['Start']['consent_get_name'].replace('&&', message.text),
                      reply_markup=consent_name)
@@ -79,16 +89,16 @@ def get_name(message):
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "consent_name//no")
-def wrong_name(call):
-    """имя не верное"""
+def wrong_name(call: tb.types.CallbackQuery):
+    """Имя не верное"""
     bot.edit_message_reply_markup(call.message.chat.id, call.message.id)
     bot.send_message(call.from_user.id, language['Start']['repeat_get_name'])
     bot.register_next_step_handler_by_chat_id(call.from_user.id, get_name)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "consent_name//yes")
-def correct_name(call):
-    """имя верное"""
+def correct_name(call: tb.types.CallbackQuery):
+    """Имя верное"""
     bot.edit_message_reply_markup(call.message.chat.id, call.message.id)
     bot.send_message(call.from_user.id, language['Start']['get_date_of_birth'])
     bot.register_next_step_handler_by_chat_id(call.from_user.id, get_date_of_birth)
@@ -150,14 +160,14 @@ def wrong_date_of_birth_program(message: tb.types.Message):
 
 
 def wrong_date_of_birth_program_18(message: tb.types.Message):
-    """Распознана дата но пользователю нет 16 лет"""
+    """Распознана дата, но пользователю нет 16 лет"""
     bot.send_message(message.from_user.id, language['Start']['repeat_16_get_date_of_birth'])
     bot.register_next_step_handler_by_chat_id(message.from_user.id, get_date_of_birth)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "consent_date_of_birth//no")
 def wrong_date_of_birth_call(call: tb.types.CallbackQuery):
-    """пользователь ответил, что распознано не верно"""
+    """Пользователь ответил, что распознано неверно"""
     bot.edit_message_reply_markup(call.message.chat.id, call.message.id)
     bot.send_message(call.from_user.id, language['Start']['repeat_get_date_of_birth'])
     bot.register_next_step_handler_by_chat_id(call.from_user.id, get_date_of_birth)
@@ -165,7 +175,7 @@ def wrong_date_of_birth_call(call: tb.types.CallbackQuery):
 
 @bot.callback_query_handler(func=lambda call: call.data == "consent_date_of_birth//yes")
 def applied_date_of_birth(call: tb.types.CallbackQuery):
-    """пользователь утвердил дату рождения"""
+    """Пользователь утвердил дату рождения"""
     bot.edit_message_reply_markup(call.message.chat.id, call.message.id)
     bot.send_message(call.from_user.id, language['Start']['select_sex'],
                      reply_markup=select_sex)
@@ -173,7 +183,7 @@ def applied_date_of_birth(call: tb.types.CallbackQuery):
 
 @bot.callback_query_handler(func=lambda call: call.data[0:10] == "select_sex")
 def consent_sex_func(call: tb.types.CallbackQuery):
-    """запрос на утверждение пола"""
+    """Запрос на утверждение пола"""
     bot.edit_message_text(language['Start']['select_sex'] + '\n' +
                           language['Start']['consent_sex'].replace('&&', language['Start'][call.data[12:]]),
                           call.message.chat.id, call.message.id, reply_markup=consent_sex[call.data[12:]])
@@ -181,7 +191,7 @@ def consent_sex_func(call: tb.types.CallbackQuery):
 
 @bot.callback_query_handler(func=lambda call: call.data[0:11] == "consent_sex")
 def apply_sex(call: tb.types.CallbackQuery):
-    """утверждение пола"""
+    """Утверждение пола"""
     data = call.data.split('//')
     if data[1] != data[2]:
         bot.edit_message_text(language['Start']['select_sex'] + '\n' +
@@ -190,6 +200,9 @@ def apply_sex(call: tb.types.CallbackQuery):
     else:
         bot.edit_message_text(language['Start']['selected_sex'].replace('&&', language['Start'][data[2]]),
                               call.message.chat.id, call.message.id)
+        db['registration'].update_one({'_id': call.from_user.id}, {'$set': {
+            'sex': data[1]
+        }})
         bot.send_message(call.from_user.id, language['Start']['sport_select'],
                          reply_markup=sport_keyboard(call.from_user.id))
 
@@ -275,7 +288,7 @@ def chose_sport(call: Optional[tb.types.CallbackQuery] = None):
 
 
 def other_sports(call: tb.types.CallbackQuery):
-    """обработка других видов спорта"""
+    """Обработка других видов спорта"""
     bot.edit_message_reply_markup(call.message.chat.id, call.message.id)
     if call.from_user.id not in selected_sports:
         chose_sport(call)
@@ -292,7 +305,7 @@ def other_sports(call: tb.types.CallbackQuery):
 
 @bot.callback_query_handler(func=lambda call: call.data == "consent_cancel_other//cancel")
 def cancel_other_sports(call: tb.types.CallbackQuery):
-    """пользователь ответил, что распознано не верно"""
+    """Пользователь ответил, что распознано не верно"""
     bot.edit_message_reply_markup(call.message.chat.id, call.message.id)
     if call.from_user.id not in selected_sports:
         chose_sport(call)
@@ -303,13 +316,13 @@ def cancel_other_sports(call: tb.types.CallbackQuery):
 
 @bot.callback_query_handler(func=lambda call: call.data == "consent_repeat_cancel_other//no")
 def wrong_repeat_other_sports(call: tb.types.CallbackQuery):
-    """пользователь ответил, что не хочет изменять"""
+    """Пользователь ответил, что не хочет изменять"""
     cancel_other_sports(call)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "consent_repeat_cancel_other//yes")
 def applied_repeat_other_sports(call: tb.types.CallbackQuery):
-    """пользователь утвердил что хочет изменить"""
+    """Пользователь утвердил что хочет изменить"""
     if call.from_user.id not in selected_sports:
         bot.edit_message_reply_markup(call.message.chat.id, call.message.id)
         chose_sport(call)
@@ -319,7 +332,7 @@ def applied_repeat_other_sports(call: tb.types.CallbackQuery):
 
 
 def other_sports_next_step(message: tb.types.Message, consent_message: tb.types.Message):
-    """обработка ответа на другие виды спорта"""
+    """Обработка ответа на другие виды спорта"""
     bot.edit_message_reply_markup(consent_message.chat.id, consent_message.id)
     data = list(map(lambda x: x.capitalize(),
                     sum(map(lambda x: x.split(','), message.text.replace('\n', '').split(', ')), [])))
@@ -331,7 +344,7 @@ def other_sports_next_step(message: tb.types.Message, consent_message: tb.types.
 
 @bot.callback_query_handler(func=lambda call: call.data == "consent_other_sports//no")
 def wrong_other_sports(call: tb.types.CallbackQuery):
-    """пользователь ответил, что распознано не верно"""
+    """Пользователь ответил, что распознано неверно"""
     if call.from_user.id not in selected_sports:
         bot.edit_message_reply_markup(call.message.chat.id, call.message.id)
         chose_sport(call)
@@ -342,14 +355,14 @@ def wrong_other_sports(call: tb.types.CallbackQuery):
 
 @bot.callback_query_handler(func=lambda call: call.data == "consent_other_sports//yes")
 def applied_other_sports(call: tb.types.CallbackQuery):
-    """пользователь утвердил другие виды спорта"""
+    """Пользователь утвердил другие виды спорта"""
     bot.edit_message_reply_markup(call.message.chat.id, call.message.id)
     bot.send_message(call.from_user.id, language['Start']['sport_select'],
                      reply_markup=sport_keyboard(call.from_user.id))
 
 
 def applied_kinds_of_sports(call: tb.types.CallbackQuery):
-    """подтверждение выбора"""
+    """Подтверждение выбора"""
     bot.edit_message_reply_markup(call.message.chat.id, call.message.id)
     user = selected_sports[call.from_user.id]
     sports = [*map(lambda x: language['Sports'][x][1:], user['sports']), *user['other']]
@@ -359,14 +372,14 @@ def applied_kinds_of_sports(call: tb.types.CallbackQuery):
 
 @bot.callback_query_handler(func=lambda call: call.data == "consent_applied_kinds_of_sports//no")
 def wrong_kinds_of_sports(call: tb.types.CallbackQuery):
-    """пользователь ответил, что распознано не верно"""
+    """Пользователь ответил, что распознано неверно"""
     bot.edit_message_reply_markup(call.message.chat.id, call.message.id)
     chose_sport(call)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "consent_applied_kinds_of_sports//yes")
 def applied_kinds_of_sports_consent(call: tb.types.CallbackQuery):
-    """пользователь утвердил виды спорта"""
+    """Пользователь утвердил виды спорта"""
     bot.edit_message_reply_markup(call.message.chat.id, call.message.id)
     if call.from_user.id not in selected_sports:
         chose_sport(call)
@@ -383,7 +396,7 @@ def applied_kinds_of_sports_consent(call: tb.types.CallbackQuery):
 
 
 def levels_of_professionalism(call: tb.types.CallbackQuery):
-    """определение уровня профессионализма (отправка сообщения со спортом)"""
+    """Определение уровня профессионализма (отправка сообщения со спортом)"""
     user = selected_sports_professionalism[call.from_user.id]
     number_of_sport = user['number_of_sport']
     if number_of_sport < len(user['sports']):
@@ -405,7 +418,7 @@ def levels_of_professionalism(call: tb.types.CallbackQuery):
 
 @bot.callback_query_handler(func=lambda call: call.data[:34] == "levels_of_professionalism_keyboard")
 def levels_of_professionalism_call(call):
-    """выбор уровня профессионализма"""
+    """Выбор уровня профессионализма"""
     data: List[str] = call.data.split('//')
     user = selected_sports_professionalism[call.from_user.id]
     number_of_sport = int(data[2])
@@ -423,7 +436,7 @@ def levels_of_professionalism_call(call):
 
 @bot.callback_query_handler(func=lambda call: call.data == "consent_levels_of_professionalism//yes")
 def applied_consent_levels_of_professionalism(call: tb.types.CallbackQuery):
-    """подтверждены уровни профессионализма"""
+    """Подтверждены уровни профессионализма"""
     about_user(call)
     bot.edit_message_reply_markup(call.message.chat.id, call.message.id)
     for mes_id in selected_sports_professionalism[call.from_user.id]['messages']:
@@ -437,13 +450,13 @@ def applied_consent_levels_of_professionalism(call: tb.types.CallbackQuery):
 
 
 def about_user(call: tb.types.CallbackQuery):
-    """запрос на ввод информации "о себе" """
+    """Запрос на ввод информации "о себе" """
     bot.send_message(call.from_user.id, language['Start']['about_user'])
     bot.register_next_step_handler_by_chat_id(call.from_user.id, about_user_consent)
 
 
 def about_user_consent(message: tb.types.Message, sent_mes=None):
-    """утверждение введенного "о себе" """
+    """Утверждение введенного "о себе" """
     if sent_mes is None:
         if len(message.text) > 255:
             sent_mes = bot.send_message(message.from_user.id, language['Start']['about_user_consent_too_long'])
@@ -502,14 +515,14 @@ def about_user_consent(message: tb.types.Message, sent_mes=None):
 
 @bot.callback_query_handler(func=lambda call: call.data == "consent_about_user//no")
 def wrong_about_user_consent(call: tb.types.CallbackQuery):
-    """пользователь ответил, что не верно"""
+    """Пользователь ответил, что не верно"""
     bot.edit_message_reply_markup(call.message.chat.id, call.message.id)
     bot.send_message(call.from_user.id, language['Start']['about_user_consent_wrong'])
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "consent_about_user//yes")
 def applied_about_user_consent(call: tb.types.CallbackQuery):
-    """пользователь утвердил "о себе" """
+    """Пользователь утвердил "о себе" """
     chat_id = call.message.chat.id
     bot.edit_message_reply_markup(chat_id, call.message.id)
     message_sent_func = about_user_decs_list[chat_id]['sent']
@@ -523,6 +536,57 @@ def applied_about_user_consent(call: tb.types.CallbackQuery):
             bot.edited_message_handlers.remove(el)
             break
     del about_user_decs_list[chat_id]
+    consent_registration(call)
+
+
+def consent_registration(call: tb.types.CallbackQuery):
+    user = db['users'].find_one({'_id': call.from_user.id})
+    if user is None:
+        bot.send_message(call.from_user.id, language['Start']['consent_registration'],
+                         reply_markup=consent_registration_keyboard)
+    else:
+        user_data = db['registration'].find_one_and_delete({'_id': call.from_user.id})
+        for key, value in user_data.items():
+            user[key] = value
+        user['settings_updated'].append(datetime.datetime.now())
+        user['current_position'] = 'main_menu_case'
+        db['users'].find_one_and_replace({'_id': call.from_user.id}, user)
+        main_menu.main_menu_cycle(call.from_user.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "consent_registration_keyboard//no")
+def wrong_consent_registration(call: tb.types.CallbackQuery):
+    """Пользователь ответил, что не утверждает регистрацию"""
+    bot.edit_message_reply_markup(call.message.chat.id, call.message.id)
+    bot.send_message(call.from_user.id, language['Start']['wrong_consent_registration'],
+                     reply_markup=wrong_consent_registration_keyboard)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "wrong_consent_registration//no")
+def wrong_consent_registration(call: tb.types.CallbackQuery):
+    """Пользователь ответил, что не утверждает отмену регистрации"""
+    bot.edit_message_reply_markup(call.message.chat.id, call.message.id)
+    consent_registration(call)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "wrong_consent_registration//yes")
+def applied_about_user_consent(call: tb.types.CallbackQuery):
+    """Пользователь утвердил отмену регистрации """
+    bot.edit_message_reply_markup(call.message.chat.id, call.message.id)
+    start_cycle(call.from_user.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "consent_registration_keyboard//yes")
+def applied_about_user_consent(call: tb.types.CallbackQuery):
+    """Пользователь утвердил регистрацию """
+    chat_id = call.message.chat.id
+    bot.edit_message_reply_markup(chat_id, call.message.id)
+    user_data = db['registration'].find_one_and_delete({'_id': call.from_user.id})
+    user_data['settings_updated'] = [datetime.datetime.now()]
+    user_data['matches'] = {}
+    user_data['current_position'] = 'main_menu_case'
+    db['users'].insert_one(user_data)
+    main_menu.main_menu_cycle(call.from_user.id)
 
 
 consent_to_reset_keyboard = tb.types.InlineKeyboardMarkup(
@@ -656,12 +720,29 @@ consent_about_user = tb.types.InlineKeyboardMarkup(
                                           callback_data='consent_about_user//no')
         ]
     ])
-
 consent_levels_of_professionalism = tb.types.InlineKeyboardMarkup(
     [
         [
             tb.types.InlineKeyboardButton(text=language['Start']['yes'],
                                           callback_data='consent_levels_of_professionalism//yes')
+        ]
+    ])
+consent_registration_keyboard = tb.types.InlineKeyboardMarkup(
+    [
+        [
+            tb.types.InlineKeyboardButton(text=language['Start']['yes'],
+                                          callback_data='consent_registration_keyboard//yes'),
+            tb.types.InlineKeyboardButton(text=language['Start']['no'],
+                                          callback_data='consent_registration_keyboard//no')
+        ]
+    ])
+wrong_consent_registration_keyboard = tb.types.InlineKeyboardMarkup(
+    [
+        [
+            tb.types.InlineKeyboardButton(text=language['Start']['yes'],
+                                          callback_data='wrong_consent_registration_keyboard//yes'),
+            tb.types.InlineKeyboardButton(text=language['Start']['no'],
+                                          callback_data='wrong_consent_registration_keyboard//no')
         ]
     ])
 
