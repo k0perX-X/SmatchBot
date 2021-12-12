@@ -1,0 +1,6 @@
+env
+.gitignore
+Docker
+test.ipynb
+test.py
+.idea

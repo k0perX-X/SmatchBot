@@ -121,11 +121,12 @@ def apply_age(call: tb.types.CallbackQuery):
     if data[1] != data[2]:
         bot.edit_message_text(language['Find partner']['suggestion_age'] + '\n' +
                               language['Find partner']['confirmation_age']
-                              .replace('&&', language['Search ranges'][data[2]]),
+                              .replace('&&', language['Age suggestion'][data[2]]),
                               call.message.chat.id, call.message.id, reply_markup=select_age[data[2]])
     else:
         bot.edit_message_text(language['Find partner']['selected_age']
-                              .replace('&&', language['Search ranges'][data[2]]), call.message.chat.id, call.message.id)
+                              .replace('&&', language['Age suggestion'][data[2]]),
+                              call.message.chat.id, call.message.id)
         try:
             location = locations[call.from_user.id]
             location['age'] = float(data[2])

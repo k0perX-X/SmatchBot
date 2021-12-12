@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+
+  mongodb:
+    image: mongo
+    restart: always
+    volumes:
+      - "dbdata:/data/db"
+    ports:
+      - "27017:27017"
+
+  telegrambot:
+    restart: always
+    build:
+      context: .
+      dockerfile: Docker/Dockerfile
+    volumes:
+      - "botlogs:/app/logs"
+    network_mode: host
+    depends_on:
+      - mongodb
+
+volumes:
+  dbdata:
+    external: true
+  botlogs:
+    external: true
