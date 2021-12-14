@@ -1,6 +1,7 @@
 from threading import Thread
 from bot_resources import *
 from typing import Any, Callable, List, Optional, Union
+from random import shuffle
 import traceback
 import datetime
 
@@ -197,6 +198,7 @@ def search(user_id: int):
 
 def found(finder_id: int, users: List[dict]):
     try:
+        shuffle(users)
         for dict_found_user in users:
             finder_user = db['users'].find_one({'_id': finder_id})
             found_user = db['users'].find_one({'_id': dict_found_user['_id']})
