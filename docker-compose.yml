@@ -23,6 +23,6 @@ services:
 
 volumes:
   dbdata:
-    external: true
+    external: false
   botlogs:
-    external: true
+    external: false
